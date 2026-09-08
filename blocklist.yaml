@@ -1,0 +1,141 @@
+# ─────────────────────────────────────────────────────────────
+#  Ethical / halal screen  —  BEST EFFORT, NOT A FATWA
+#
+#  This filter is a first pass to keep the bot away from the most
+#  obvious problem categories. It is NOT a substitute for a proper
+#  Shariah screening service (Musaffa, Practical Islamic Finance,
+#  Sharlife, IdealRatings) or a qualified scholar. Review the
+#  allowlist the bot produces (`python main.py screen`) before you
+#  ever switch to live mode.
+#
+#  Note: even a coin that passes this screen may have debatable
+#  aspects (token emission model, staking mechanics, protocol fees).
+#  Add anything you are unsure about to `explicit_block`.
+# ─────────────────────────────────────────────────────────────
+
+# Base assets that are always excluded (symbol -> reason).
+explicit_block:
+  # ── Lending / borrowing / interest (riba) ─────────────────
+  AAVE:  "lending & borrowing protocol (interest)"
+  COMP:  "Compound - lending & borrowing (interest)"
+  MKR:   "MakerDAO - stability fee is interest"
+  SKY:   "Sky/Maker rebrand - stability fee is interest"
+  JST:   "JustLend - lending (interest)"
+  XVS:   "Venus - lending & borrowing (interest)"
+  RDNT:  "Radiant - cross-chain lending (interest)"
+  CREAM: "Cream Finance - lending (interest)"
+  ALPHA: "Alpha Homora - leveraged lending"
+  MPL:   "Maple - on-chain lending / credit (interest)"
+  TRU:   "TrueFi - uncollateralised lending (interest)"
+  FOR:   "ForTube - lending (interest)"
+  QI:    "BENQI - lending (interest)"
+  GEIST: "Geist Finance - lending (interest)"
+  LQTY:  "Liquity - collateralised borrowing"
+  LDO:   "Lido - review (liquid staking); remove if you accept staking"
+  NEXO:  "CeFi lending / interest account"
+  CEL:   "Celsius - CeFi lending / interest"
+  # ── Yield / interest tokenisation ────────────────────────
+  YFI:   "Yearn - yield aggregation (interest-like returns)"
+  PENDLE: "Pendle - yield tokenisation (interest)"
+  CVX:   "Convex - yield optimiser"
+  AURA:  "Aura - yield optimiser"
+  BIFI:  "Beefy - yield optimiser"
+  BADGER: "Badger - yield"
+  # ── Gambling / GambleFi / prediction betting ─────────────
+  RLB:   "Rollbit - casino / gambling"
+  WINR:  "WINR / JustBet - gambling"
+  WGR:   "Wagerr - sports betting"
+  FUN:   "FunFair - online casino"
+  AZUR:  "Azuro - betting protocol"
+  DEXE:  "review - trader funds / leverage"
+  # ── Adult ───────────────────────────────────────────────
+  PRN:   "adult content"
+  # ── Stablecoins (not a trading target) ──────────────────
+  USDT: "stablecoin"
+  USDC: "stablecoin"
+  FDUSD: "stablecoin"
+  TUSD: "stablecoin"
+  DAI:  "stablecoin (also debt-backed)"
+  USDP: "stablecoin"
+  PYUSD: "stablecoin"
+  USDD: "stablecoin"
+  GUSD: "stablecoin"
+  EURI: "stablecoin"
+  EURT: "stablecoin"
+  LUSD: "stablecoin"
+  FRAX: "stablecoin"
+  USDE: "stablecoin (yield-bearing)"
+  USTC: "failed algorithmic stablecoin"
+  AEUR: "stablecoin"
+  XUSD: "stablecoin"
+
+# Optional group — only applied when screening.exclude_exchange_tokens: true
+exchange_tokens:
+  - BNB
+  - OKB
+  - KCS
+  - GT
+  - MX
+  - LEO
+  - HT
+  - CRO
+  - BGB
+  - WBT
+
+# Regex patterns matched (case-insensitive, word-boundary) against
+# "<SYMBOL> <project name>". Keep them specific to avoid false hits.
+keywords:
+  # gambling
+  - '\bcasino\b'
+  - '\bgambl\w*'
+  - '\bbet(s|ting)?\b'
+  - '\bwager\w*'
+  - '\bpoker\b'
+  - '\blotter\w*'
+  - '\blotto\b'
+  - '\bjackpot\b'
+  - '\bslots?\b'
+  - '\broulette\b'
+  - '\bblackjack\b'
+  - '\bparlay\b'
+  - '\bsportsbook\b'
+  - '\bdice\b'
+  # alcohol
+  - '\bwine\b'
+  - '\bbeer\b'
+  - '\bvodka\b'
+  - '\bwhisk(e)?y\b'
+  - '\bbrewer\w*'
+  - '\bliquor\b'
+  - '\btequila\b'
+  - '\bchampagne\b'
+  # lending / interest
+  - '\blending\b'
+  - '\blend\b'
+  - '\bloan(s)?\b'
+  - '\bmortgage\b'
+  - '\bpayday\b'
+  - '\busur\w*'
+  # adult
+  - '\bporn\w*'
+  - '\bxxx\b'
+  - '\bhentai\b'
+  - '\bcamgirl\b'
+  - '\bonlyfans\b'
+  - '\bnsfw\b'
+  - '\bescort\b'
+  - '\bplayboy\b'
+
+# CoinGecko category names (lower-case) that cause exclusion.
+# Only used when screening.use_coingecko: true
+bad_categories:
+  - 'gambling (gamblefi)'
+  - 'gambling'
+  - 'prediction markets'
+  - 'lending/borrowing'
+  - 'lending/borrowing protocols'
+  - 'yield farming'
+  - 'yield aggregator'
+  - 'yield tokenization'
+  - 'cefi'
+  - 'liquid staking governance tokens'   # review; remove if you accept staking

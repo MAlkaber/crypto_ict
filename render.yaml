@@ -1,0 +1,24 @@
+# Render — background worker (note: workers are a paid plan on Render).
+services:
+  - type: worker
+    name: halal-crypto-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: I_UNDERSTAND_LIVE_TRADING
+        value: "no"

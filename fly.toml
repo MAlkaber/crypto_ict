@@ -1,0 +1,23 @@
+# Fly.io — always-on worker, no public services (Telegram is outbound only).
+# Edit `app` to a unique name, then:  fly launch --no-deploy   &&   fly deploy
+app = "halal-crypto-bot"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # non-secret config only; set secrets with `fly secrets set ...`
+
+[[mounts]]
+  source = "data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+# Keep exactly one instance running around the clock.
+[deploy]
+  strategy = "immediate"

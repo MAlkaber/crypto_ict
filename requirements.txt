@@ -1,0 +1,6 @@
+anthropic>=1.4.0
+requests>=2.31.0
+pandas>=2.1.0
+numpy>=1.26.0
+PyYAML>=6.0.1
+python-dotenv>=1.0.1

@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────
+#  halal-crypto-bot configuration
+# ─────────────────────────────────────────────────────────────
+
+mode: paper                 # paper | live   (live also needs --live and the .env confirmation)
+model: claude-opus-5        # decision model. claude-sonnet-5 is ~2.5x cheaper if you loop often.
+effort: medium              # low | medium | high | xhigh | max  (agent thinking depth)
+base_currency: USDT
+
+cycle:
+  interval_minutes: 240     # how often `loop` runs a full cycle (240 = every 4h)
+  max_agent_iterations: 20  # hard cap on tool-call rounds per cycle
+
+universe:
+  min_24h_quote_volume_usd: 3000000   # liquidity floor
+  max_candidates_for_agent: 40        # how many ranked coins the agent sees
+  kline_interval: 1d                  # timeframe used for momentum pre-ranking
+  kline_lookback: 250
+
+# Multi-timeframe ICT analysis (top-down: bias -> point of interest -> entry).
+# htf/setup are fetched for the whole shortlist; entry is pulled on demand by
+# the agent (get_coin) only for the coins it actually studies.
+timeframes:
+  htf: 1w        # weekly draw-on-liquidity + directional bias
+  setup: 4h      # 4H point of interest (order block / FVG / breaker) in discount
+  entry: 15m     # 15m confirmation: CHoCH + sweep of local low + FVG entry
+  htf_lookback: 160
+  setup_lookback: 180
+  entry_lookback: 192
+
+screening:
+  use_coingecko: false        # enrich with CoinGecko categories (slower, rate-limited, better coverage)
+  exclude_unverified: false   # if true, drop coins whose category can't be verified
+  exclude_memecoins: true
+  exclude_stablecoins: true
+  exclude_exchange_tokens: false   # BNB, OKB, KCS, GT, MX, LEO ... (exchanges run futures/margin)
+
+risk:
+  starting_paper_balance_usd: 10000
+  max_position_pct: 15        # max % of equity in any one coin
+  max_open_positions: 8
+  cash_reserve_pct: 10        # always keep at least this % in USDT
+  min_order_usd: 20
+  stop_loss_pct: 18           # hard stop from average entry
+  take_profit_pct: 60         # take profit target
+  trailing_stop_pct: 25       # trail from peak once position is up >= take_profit_pct/2
+  max_daily_loss_pct: 8       # if equity drops this % from the day's open, halt new buys
+
+news:
+  enabled: false              # let the agent run web searches for catalysts/news (costs extra tokens)
+
+notifications:
+  telegram: false           # push cycle summaries to Telegram (needs TELEGRAM_* in .env)
+  console: true
+  # `python main.py serve` runs the trading loop + a two-way Telegram control bot
+  # (/status /positions /scan /regime /review /runcycle /pause /resume /flatten).
+  # It needs TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID regardless of the flag above.
+  # See DEPLOY.md for 24/7 hosting (Railway / Fly).
