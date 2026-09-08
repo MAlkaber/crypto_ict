@@ -73,14 +73,17 @@ def cmd_status(cfg, args):
         print(f"no portfolio yet at {path} (run `once`)")
         return
     raw = json.loads(path.read_text())
-    print(f"\nmode: {cfg.mode}   cash: ${raw['cash']:,.2f}   "
-          f"day_open_equity: ${raw.get('day_open_equity', 0):,.2f}")
+    hdr = f"\nmode: {cfg.mode}   cash: ${raw['cash']:,.2f}   peak: ${raw.get('peak_equity', 0):,.2f}"
+    if raw.get("halted"):
+        hdr += f"   🛑 halted ({raw.get('halt_reason', '')})"
+    print(hdr)
     pos = raw.get("positions", {})
     if pos:
-        print("─" * 50)
+        print("─" * 60)
         for asset, p in pos.items():
             print(f"  {asset:<10} qty={p['qty']:.6g}  avg=${p['avg_cost']:.6g}  "
-                  f"peak=${p['peak_price']:.6g}")
+                  f"stop=${p.get('stop', 0):.6g}  tgt=${p.get('target', 0):.6g}"
+                  f"{'  [partial]' if p.get('partial_done') else ''}")
     trades = raw.get("trades", [])
     print(f"\n{len(trades)} trades logged", end="")
     if trades:

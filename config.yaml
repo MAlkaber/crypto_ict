@@ -37,14 +37,29 @@ screening:
 
 risk:
   starting_paper_balance_usd: 10000
-  max_position_pct: 15        # max % of equity in any one coin
+
+  # ── position sizing: R-based ──────────────────────────────
+  # Size is set by the distance to the agent's STRUCTURAL stop, not a flat %.
+  #   size_usd = equity * risk_per_trade_pct / (stop distance %)
+  risk_per_trade_pct: 2.0      # equity lost if the trade hits its structural stop (= 1R)
+  max_position_pct: 20         # hard ceiling on any one position (size may be well below)
   max_open_positions: 8
-  cash_reserve_pct: 10        # always keep at least this % in USDT
+  cash_reserve_pct: 10         # always keep at least this % in USDT
   min_order_usd: 20
-  stop_loss_pct: 18           # hard stop from average entry
-  take_profit_pct: 60         # take profit target
-  trailing_stop_pct: 25       # trail from peak once position is up >= take_profit_pct/2
-  max_daily_loss_pct: 8       # if equity drops this % from the day's open, halt new buys
+  max_stop_distance_pct: 22    # if structural invalidation is further than this -> skip (not A+)
+  min_stop_distance_pct: 1.5   # tighter than this is noise -> widen to this
+  disaster_stop_pct: 30        # absolute backstop below avg entry (data-error guard)
+
+  # ── profit taking / trade management (R multiples) ────────
+  partial_tp_at_r: 2.0         # sell ~half at +2R and move stop to breakeven
+  partial_tp_fraction: 0.5
+  trail_after_r: 1.5           # start trailing the stop once past +1.5R
+  trail_giveback_pct: 12       # trail stop this far below the peak once trailing is armed
+
+  # ── portfolio circuit breaker (swing-appropriate) ─────────
+  max_drawdown_pct: 10         # halt NEW buys while equity is >10% below its high-water mark
+  resume_drawdown_pct: 8       # ...resume once back within this % of the peak
+  max_rolling_7d_loss_pct: 8   # faster tripwire: halt on an 8% loss over any rolling 7 days
 
 news:
   enabled: false              # let the agent run web searches for catalysts/news (costs extra tokens)

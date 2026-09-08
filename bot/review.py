@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from itertools import combinations
 
 
-def _closed_trades(trades: list[dict], stop_loss_pct: float) -> list[dict]:
+def _closed_trades(trades: list[dict], fallback_r_pct: float) -> list[dict]:
     lots: dict[str, list[dict]] = defaultdict(list)
     closed = []
     for t in sorted(trades, key=lambda x: x.get("ts", 0)):
@@ -27,7 +27,8 @@ def _closed_trades(trades: list[dict], stop_loss_pct: float) -> list[dict]:
             lots[asset].append({"qty": qty, "price": price, "ts": t.get("ts", 0),
                                 "concepts": t.get("concepts") or [],
                                 "regime": t.get("regime", "?"),
-                                "bull_phase": t.get("bull_phase")})
+                                "bull_phase": t.get("bull_phase"),
+                                "r_pct": t.get("r_pct") or fallback_r_pct})
         elif side == "SELL":
             remaining = qty
             while remaining > 1e-12 and lots[asset]:
@@ -35,13 +36,14 @@ def _closed_trades(trades: list[dict], stop_loss_pct: float) -> list[dict]:
                 take = min(remaining, lot["qty"])
                 entry, exit_ = lot["price"], price
                 ret = (exit_ / entry - 1) * 100
+                r_denom = lot.get("r_pct") or fallback_r_pct
                 hold_days = max((t.get("ts", 0) - lot["ts"]) / 86400, 0.0)
                 closed.append({
                     "asset": asset,
                     "entry": round(entry, 8), "exit": round(exit_, 8),
                     "qty": round(take, 8),
                     "return_pct": round(ret, 2),
-                    "R": round(ret / stop_loss_pct, 2) if stop_loss_pct else None,
+                    "R": round(ret / r_denom, 2) if r_denom else None,
                     "pnl_usd": round(take * (exit_ - entry), 2),
                     "hold_days": round(hold_days, 1),
                     "concepts": lot["concepts"],
@@ -97,7 +99,7 @@ def build_review(state_path, cfg, months: float | None = None) -> dict:
         cutoff = datetime.now(timezone.utc).timestamp() - months * 30 * 86400
         trades = [t for t in trades if t.get("ts", 0) >= cutoff]
 
-    closed = _closed_trades(trades, float(cfg.risk.stop_loss_pct))
+    closed = _closed_trades(trades, float(cfg.risk.disaster_stop_pct))
     concept_pairs = _group(
         closed,
         lambda r: ["+".join(sorted(p)) for p in combinations(sorted(set(r["concepts"])), 2)],

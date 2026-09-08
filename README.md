@@ -74,8 +74,8 @@ Fly (no server to manage) — see **[DEPLOY.md](DEPLOY.md)**.
 ## Configuration
 
 - **`config.yaml`** — mode, model/effort, cycle interval, universe filters,
-  `timeframes` (htf/setup/entry), and the `risk` block (position caps, stops,
-  take-profit, trailing stop, daily-loss circuit breaker).
+  `timeframes` (htf/setup/entry), and the `risk` block (R-based sizing, structural
+  stop bounds, partial/trail rules, drawdown circuit breaker).
 - **`blocklist.yaml`** — the halal screen: explicit blocks, keyword patterns,
   optional CoinGecko category checks.
 
@@ -92,11 +92,16 @@ Fly (no server to manage) — see **[DEPLOY.md](DEPLOY.md)**.
    liquidity void, BPR, PD-array matrix. 15m also gets session highs/lows,
    killzones and recent sweeps.
 3. The agent **chooses which concepts matter for the regime**, tags every order
-   with the concepts it used, and writes a full thesis (bias, POI, trigger,
-   invalidation, target).
-4. **RiskEngine** (`risk.py`) clamps/rejects every buy (position cap, max
-   positions, cash reserve, min order, daily-loss halt) and fires protective
-   exits (hard stop, take-profit, trailing stop) *before* the agent runs.
+   with the concepts it used, and gives each `buy` a **structural `stop` and
+   `target` price** plus a full thesis (bias, POI, trigger, invalidation, target).
+4. **RiskEngine** (`risk.py`) — sizing is **R-based**: the position is sized so a
+   hit to the agent's structural stop loses `risk_per_trade_pct` of equity (=1R),
+   then capped by `max_position_pct` / cash reserve / max positions. A stop more
+   than `max_stop_distance_pct` away is rejected (not an A+ setup). Managed exits
+   run *before* the agent each cycle: the structural stop (trailed up as price
+   runs), a partial booked at `+partial_tp_at_r`R with stop → breakeven, and a
+   `disaster_stop_pct` backstop. New buys halt when equity is `max_drawdown_pct`
+   below its **high-water mark** or down `max_rolling_7d_loss_pct` over 7 days.
 
 ## Quarterly review (which concepts work in which market)
 

@@ -32,11 +32,17 @@ Hard rules (enforced in code — do not fight them):
   "stay out" or "trim" — never "short".)
 - The universe is already halal-screened (no interest/lending, yield, gambling,
   adult, stablecoins). You cannot trade anything else.
-- The RiskEngine clamps or rejects any buy that breaks: max {max_position_pct}%
-  per coin, max {max_open_positions} open positions, keep >= {cash_reserve_pct}%
-  cash, min order ${min_order_usd}. Protective exits (stop -{stop_loss_pct}%,
-  take-profit +{take_profit_pct}%, trailing -{trailing_stop_pct}%) already ran
-  BEFORE you — you MAY still sell early when structure breaks.
+- POSITION SIZE IS NOT YOUR CHOICE — it is R-based. Every `buy` needs a `stop`
+  (your structural invalidation price) and a `target`. The RiskEngine sizes the
+  order so a hit to that stop loses ~{risk_per_trade_pct}% of equity (= 1R), then
+  caps it at {max_position_pct}% of equity / {cash_reserve_pct}% cash reserve /
+  {max_open_positions} positions. So: a TIGHT structural stop => a BIGGER position;
+  a loose one => smaller. If invalidation is more than {max_stop_distance_pct}%
+  from entry, the trade is rejected — that's not an A+ setup, pick a better POI.
+- Managed exits already run BEFORE you each cycle: structural stop (your level,
+  trailed up as price runs), partial {partial_tp_fraction} booked at
+  +{partial_tp_at_r}R with stop to breakeven, and a {disaster_stop_pct}% disaster
+  backstop. You MAY still exit early when the thesis/structure breaks.
 
 TOP-DOWN METHOD (weekly -> 4H -> 15m), the timeframes are connected:
 1. WEEKLY (htf): establish directional bias and the weekly draw on liquidity
@@ -104,10 +110,15 @@ Process:
    liquidity target.
 2. Scan the shortlist's weekly+4H reads. get_coin on the best few (<= 8) — this
    also pulls fresh 15m for the entry check.
-3. buy / sell. Every order's thesis MUST name: weekly bias + draw, the 4H POI
-   zone, the 15m trigger (or why you took a starter), invalidation, target. Fill
-   `concepts` with the ICT concepts you actually used (e.g. ["weekly_discount",
-   "4h_order_block","15m_CISD","turtle_soup","OTE"]).
+3. buy / sell. Every `buy` needs `stop` and `target` PRICES (not %). `stop` = the
+   real structural invalidation (below the 4H order block / the 15m sweep low) —
+   put it where the idea is wrong, not at a round number. `target` = the next
+   opposing liquidity pool. The thesis MUST name: weekly bias + draw, the 4H POI
+   zone, the 15m trigger (or why you took a starter), and restate stop + target.
+   Fill `concepts` with the ICT concepts you actually used (e.g.
+   ["weekly_discount","4h_order_block","15m_CISD","turtle_soup","OTE"]).
+   The result tells you the sized amount and R distance — if it says the stop is
+   too far, you picked a poor POI; find a tighter structural level or skip.
 4. finish with a concise summary and your market view.
 
 Keep total tool calls under the cap. Be decisive. Cash is a position."""
@@ -135,8 +146,9 @@ def _compact_candidate(c: dict) -> dict:
 TOOLS = [
     {
         "name": "get_portfolio",
-        "description": "Current cash, equity, open positions with unrealised P&L, "
-                       "day P&L and whether the daily-loss halt is active.",
+        "description": "Cash, equity, drawdown from the equity high-water mark, whether "
+                       "the circuit breaker is active, and every open position with its "
+                       "stop / target / current R multiple / partial-taken flag.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
@@ -154,19 +166,24 @@ TOOLS = [
     },
     {
         "name": "buy",
-        "description": "Buy `usd` worth of `symbol` with USDT cash. The RiskEngine "
-                       "may clamp the amount or reject the order; the result tells you.",
+        "description": "Open or add to a long. You do NOT set the size — provide `stop` "
+                       "and `target` prices and the RiskEngine sizes it R-based (tighter "
+                       "stop = bigger position) and may reject it. The result gives the "
+                       "actual amount, stored stop, and R distance.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "symbol": {"type": "string"},
-                "usd": {"type": "number", "description": "USDT to spend"},
+                "stop": {"type": "number",
+                         "description": "structural invalidation PRICE, below entry"},
+                "target": {"type": "number",
+                           "description": "first target PRICE — the next opposing liquidity pool"},
                 "thesis": {"type": "string",
-                           "description": "weekly bias+draw, 4H POI zone, 15m trigger, invalidation, target"},
+                           "description": "weekly bias+draw, 4H POI zone, 15m trigger, stop, target"},
                 "concepts": {"type": "array", "items": {"type": "string"},
                              "description": "ICT concepts relied on, for the quarterly review"},
             },
-            "required": ["symbol", "usd", "thesis", "concepts"],
+            "required": ["symbol", "stop", "target", "thesis", "concepts"],
             "additionalProperties": False,
         },
     },
@@ -217,9 +234,11 @@ class TradingAgent:
             "equity": round(equity, 2),
             "invested_pct": round((1 - pf.cash / equity) * 100, 1) if equity else 0.0,
             "open_positions": self._positions_view(pf, prices),
-            "day_pnl_pct": round(self.risk.daily_loss_pct(pf, equity), 2),
-            "daily_loss_halt": self.risk.halted(pf, equity),
+            "drawdown_from_peak_pct": round(pf.drawdown_pct(equity), 2),
+            "rolling_7d_pct": round(pf.rolling_return_pct(equity, 7.0), 2),
+            "circuit_breaker": {"active": pf.halted, "reason": pf.halt_reason},
             "max_open_positions": self.risk.max_open_positions,
+            "risk_per_trade_pct": self.risk.risk_per_trade_pct,
         }
 
     @staticmethod
@@ -229,6 +248,7 @@ class TradingAgent:
             px = prices.get(asset + "USDT")
             if not px:
                 continue
+            r = pos.r_multiple(px)
             out.append({
                 "symbol": asset + "USDT",
                 "qty": pos.qty,
@@ -236,7 +256,11 @@ class TradingAgent:
                 "price": px,
                 "value_usd": round(pos.qty * px, 2),
                 "pnl_pct": round((px / pos.avg_cost - 1) * 100, 2) if pos.avg_cost else 0.0,
-                "peak_price": round(pos.peak_price, 6),
+                "stop": round(pos.stop, 6) if pos.stop else None,
+                "target": round(pos.target, 6) if pos.target else None,
+                "r_multiple": round(r, 2) if r is not None else None,
+                "partial_taken": pos.partial_done,
+                "concepts": pos.concepts,
             })
         return out
 
@@ -287,20 +311,34 @@ class TradingAgent:
             "candles_ohlc": candles_by_tf,
         }
 
-    def _do_buy(self, pf, broker, prices, symbol, usd, thesis, concepts) -> dict:
+    def _do_buy(self, pf, broker, prices, symbol, stop, target, thesis, concepts) -> dict:
         symbol = symbol.upper()
         asset = symbol[:-4] if symbol.endswith("USDT") else symbol
         if symbol not in self.by_symbol:
             return {"ok": False, "reason": f"{symbol} not in screened shortlist"}
-        decision = self.risk.check_buy(pf, prices, asset, float(usd))
+        entry = prices.get(symbol)
+        if not entry:
+            return {"ok": False, "reason": "no live price"}
+        decision = self.risk.check_buy(pf, prices, asset, entry, float(stop), float(target))
         if not decision.ok:
             return {"ok": False, "reason": decision.reason}
         fill = broker.buy(asset, decision.usd, reason=thesis)
         rec = fill.as_dict()
         if fill.ok:
+            pos = pf.positions.get(asset)
+            if pos:
+                pos.target = float(target)
+                if not pos.init_stop:            # first entry defines 1R
+                    pos.init_stop = decision.stop
+                pos.stop = max(pos.stop, decision.stop) if pos.stop else decision.stop
+                pos.concepts = list(dict.fromkeys((pos.concepts or []) + (concepts or [])))
             self.trades.append({**rec, "thesis": thesis, "concepts": concepts or [],
+                                "stop": decision.stop, "target": float(target),
+                                "r_pct": round(decision.r_pct, 2),
                                 "regime": self.regime_label, "bull_phase": self.bull_phase})
         rec["risk_note"] = decision.reason
+        rec["stop"] = decision.stop
+        rec["r_pct"] = round(decision.r_pct, 2)
         return rec
 
     def _do_sell(self, pf, broker, prices, symbol, amount, reason, concepts=None) -> dict:
@@ -338,10 +376,11 @@ class TradingAgent:
 
         r = self.cfg.risk
         system = SYSTEM.format(
-            max_position_pct=r.max_position_pct, max_open_positions=r.max_open_positions,
-            cash_reserve_pct=r.cash_reserve_pct, min_order_usd=r.min_order_usd,
-            stop_loss_pct=r.stop_loss_pct, take_profit_pct=r.take_profit_pct,
-            trailing_stop_pct=r.trailing_stop_pct,
+            risk_per_trade_pct=r.risk_per_trade_pct, max_position_pct=r.max_position_pct,
+            max_open_positions=r.max_open_positions, cash_reserve_pct=r.cash_reserve_pct,
+            max_stop_distance_pct=r.max_stop_distance_pct,
+            partial_tp_fraction=f"{float(r.partial_tp_fraction):.0%}",
+            partial_tp_at_r=r.partial_tp_at_r, disaster_stop_pct=r.disaster_stop_pct,
         )
 
         htf = candidates[0].get("mtf_order", ["1w", "4h", "1d"]) if candidates else ["1w", "4h", "1d"]
@@ -426,8 +465,8 @@ class TradingAgent:
         if name == "get_coin":
             return self._coin_detail(inp["symbol"])
         if name == "buy":
-            return self._do_buy(pf, broker, prices, inp["symbol"], inp["usd"],
-                                inp["thesis"], inp.get("concepts", []))
+            return self._do_buy(pf, broker, prices, inp["symbol"], inp["stop"],
+                                inp["target"], inp["thesis"], inp.get("concepts", []))
         if name == "sell":
             return self._do_sell(pf, broker, prices, inp["symbol"], inp["amount"],
                                  inp["reason"], inp.get("concepts", []))

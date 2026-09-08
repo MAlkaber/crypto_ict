@@ -54,19 +54,25 @@ class Notifier:
             br_txt = f"  |  🚀 bull-run: {br.get('phase', '?')}"
         elif br.get("derisk"):
             br_txt = "  |  ⚠ de-risk"
+        dd = report.get("drawdown_pct", 0)
+        cb = "  |  🛑 circuit breaker" if report.get("circuit_breaker") else ""
         lines = [
             f"*halal-crypto-bot* — {mode} cycle @ {report.get('time', '')}",
-            f"regime: *{report.get('regime', '?')}*{br_txt}  |  equity: ${eq:,.2f}  "
-            f"|  cash: ${report.get('cash', 0):,.2f}  |  day: {report.get('day_pnl_pct', 0):+.2f}%",
+            f"regime: *{report.get('regime', '?')}*{br_txt}{cb}  |  equity: ${eq:,.2f}  "
+            f"|  cash: ${report.get('cash', 0):,.2f}  |  dd: {dd:+.1f}%",
         ]
+        for m in report.get("stop_moves", []):
+            lines.append(f"↑ {m['asset']} stop → {m['new_stop']:.6g}")
         forced = report.get("forced_exits", [])
         for f in forced:
-            lines.append(f"🛑 exit {f['asset']} — {f['reason']}")
+            verb = "trim" if f.get("fraction") else "exit"
+            lines.append(f"🛑 {verb} {f['asset']} — {f['reason']}")
         for t in report.get("trades", []):
             if not t.get("ok", True):
                 continue
             arrow = "🟢 BUY " if t["side"] == "BUY" else "🔴 SELL"
-            lines.append(f"{arrow} {t['asset']} ${t.get('usd', 0):,.0f} @ {t.get('price', 0):.6g}")
+            extra = f"  (stop {t['stop']:.6g}, {t.get('r_pct', 0):.1f}%)" if t.get("stop") and t["side"] == "BUY" else ""
+            lines.append(f"{arrow} {t['asset']} ${t.get('usd', 0):,.0f} @ {t.get('price', 0):.6g}{extra}")
         if report.get("agent_summary"):
             lines.append("")
             lines.append(report["agent_summary"])
@@ -78,14 +84,15 @@ class Notifier:
     def publish_signals(self, report: dict):
         actions = []
         for f in report.get("forced_exits", []):
-            actions.append({"action": "EXIT", "symbol": f["asset"] + "USDT",
-                            "reason": f["reason"], "auto": True})
+            actions.append({"action": "TRIM" if f.get("fraction") else "EXIT",
+                            "symbol": f["asset"] + "USDT", "reason": f["reason"], "auto": True})
         for t in report.get("trades", []):
             if not t.get("ok", True):
                 continue
             actions.append({
                 "action": t["side"], "symbol": t["asset"] + "USDT",
                 "price": t.get("price"), "usd": round(t.get("usd", 0), 2),
+                "stop": t.get("stop"), "target": t.get("target"), "r_pct": t.get("r_pct"),
                 "weight_pct": report.get("weights", {}).get(t["asset"]),
                 "thesis": t.get("thesis", ""),
                 "concepts": t.get("concepts", []),

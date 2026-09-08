@@ -123,8 +123,8 @@ class TelegramBot:
             f"mode: {'LIVE' if self.ctl.live else self.cfg.mode}"
             f"{'  ⏸ PAUSED' if self.ctl.paused else ''}",
             f"equity: ${rep.get('equity', 0):,.2f}   cash: ${rep.get('cash', 0):,.2f}",
-            f"day P&L: {rep.get('day_pnl_pct', 0):+.2f}%"
-            f"{'   🛑 daily halt' if rep.get('daily_loss_halt') else ''}",
+            f"drawdown: {rep.get('drawdown_pct', 0):+.1f}%   7d: {rep.get('rolling_7d_pct', 0):+.1f}%"
+            f"{'   🛑 ' + rep.get('circuit_breaker_reason', 'circuit breaker') if rep.get('circuit_breaker') else ''}",
             f"regime: {rep.get('regime', '?')}"
             + (f"   🚀 bull-run {br.get('phase')}" if br.get('active') else "")
             + ("   ⚠ de-risk" if br.get('derisk') else ""),
@@ -171,21 +171,25 @@ class TelegramBot:
         rep = self._last_report()
         eq = rep.get("equity", curve[-1]["equity"] if curve else 0)
         start = self.cfg.risk.starting_paper_balance_usd
-        day_open = pf.get("day_open_equity", start)
-        self.send(f"equity: ${eq:,.2f}\n"
-                  f"since day open: {(eq / day_open - 1) * 100:+.2f}%  (${eq - day_open:+,.0f})\n"
-                  f"since start:    {(eq / start - 1) * 100:+.2f}%  (${eq - start:+,.0f})")
+        peak = pf.get("peak_equity", start) or start
+        self.send(f"equity: ${eq:,.2f}   peak: ${peak:,.2f}\n"
+                  f"drawdown from peak: {(eq / peak - 1) * 100:+.2f}%  (${eq - peak:+,.0f})\n"
+                  f"since start:        {(eq / start - 1) * 100:+.2f}%  (${eq - start:+,.0f})\n"
+                  f"rolling 7d:         {rep.get('rolling_7d_pct', 0):+.2f}%")
 
     def cmd_settings(self, _):
         r = self.cfg.risk
         self.send(
             f"mode: {self.cfg.mode}   model: {self.cfg.model}   effort: {self.cfg.effort}\n"
             f"cycle: every {self.cfg.cycle.interval_minutes} min\n"
+            f"risk/trade: {r.risk_per_trade_pct}% (R-based sizing to structural stop)\n"
             f"max position: {r.max_position_pct}%   max positions: {r.max_open_positions}\n"
             f"cash reserve: {r.cash_reserve_pct}%   min order: ${r.min_order_usd}\n"
-            f"stop: -{r.stop_loss_pct}%   take-profit: +{r.take_profit_pct}%   "
-            f"trail: -{r.trailing_stop_pct}%\n"
-            f"daily-loss halt: -{r.max_daily_loss_pct}%")
+            f"stop distance allowed: {r.min_stop_distance_pct}–{r.max_stop_distance_pct}%   "
+            f"disaster stop: -{r.disaster_stop_pct}%\n"
+            f"partial {float(r.partial_tp_fraction):.0%} at +{r.partial_tp_at_r}R, "
+            f"trail after +{r.trail_after_r}R (-{r.trail_giveback_pct}% giveback)\n"
+            f"circuit breaker: -{r.max_drawdown_pct}% from peak or -{r.max_rolling_7d_loss_pct}%/7d")
 
     def cmd_scan(self, _):
         if not self._busy.acquire(blocking=False):
